@@ -7,7 +7,6 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
-        /* 讓畫面完全變黑（在眼鏡中看起來就是透明），不遮擋現實視線 */
         body {
             margin: 0;
             background-color: #000000;
@@ -17,10 +16,9 @@
             align-items: center;
             height: 100vh;
         }
-        /* YouTube 播放器容器 */
         #player {
             width: 100vw;
-            height: 56.25vw; /* 保持 16:9 比例比例 */
+            height: 56.25vw;
             max-height: 100vh;
             max-width: 177.78vh;
         }
@@ -31,7 +29,7 @@
     <div id="player"></div>
 
     <script>
-        // 1. 初始化你的 Firebase (維持你原來的設定)
+        // 1. 初始化 Firebase (維持你原來的設定)
         const firebaseConfig = {
             databaseURL: "https://ytonmetadisplay-default-rtdb.firebaseio.com"
         };
@@ -46,15 +44,14 @@
 
         var player;
         function onYouTubeIframeAPIReady() {
-            // 預設先載入一個測試影片，並使用 youtube-nocookie.com 阻擋廣告
             player = new YT.Player('player', {
                 height: '100%',
                 width: '100%',
                 videoId: 'dQw4w9WgXcQ', 
-                host: 'https://www.youtube-nocookie.com', // 強制啟動無廣告隱私模式
+                host: 'https://www.youtube-nocookie.com', // 阻擋廣告
                 playerVars: {
                     'playsinline': 1,
-                    'controls': 1, // 顯示進度條，方便看狀態
+                    'controls': 1,
                     'autoplay': 1,
                     'rel': 0
                 },
@@ -64,19 +61,16 @@
             });
         }
 
-        // 3. 當播放器準備就緒，開始監聽 Firebase 與 眼鏡觸控
+        // 3. 當播放器準備就緒
         function onPlayerReady(event) {
-            // 監聽 Firebase 訊號
+            // 監聽來自手機遙控端的 Firebase 訊號
             database.ref('currentVideo').on('value', function(snapshot) {
                 var data = snapshot.val();
                 if (data && data.id) {
                     var currentId = player.getVideoData()['video_id'];
-                    // 如果 ID 不同，代表換歌了
                     if (currentId !== data.id) {
                         player.loadVideoById(data.id);
                     }
-                    
-                    // 控制播放或暫停
                     if (data.status === 'play') {
                         player.playVideo();
                     } else if (data.status === 'pause') {
@@ -85,46 +79,49 @@
                 }
             });
 
+            // 4. 【神級優化】精準硬體事件監聽 (使用捕獲模式 true，攔截 YouTube 的搶焦點)
+            window.addEventListener('keydown', function(e) {
+                if (!player || typeof player.getPlayerState !== 'function') return;
+                
+                var currentTime = player.getCurrentTime();
 
-// 5. 終極完全體：方向鍵監聽（滑動） + 全域點擊監聽（敲擊）
+                switch (e.key) {
+                    // 敲擊鏡腿 (Enter) -> 切換暫停或播放
+                    case 'Enter':
+                        e.preventDefault();
+                        var state = player.getPlayerState();
+                        if (state === YT.PlayerState.PLAYING) {
+                            player.pauseVideo();
+                            database.ref('currentVideo/status').set('pause');
+                        } else {
+                            player.playVideo();
+                            database.ref('currentVideo/status').set('play');
+                        }
+                        break;
 
-// A. 監聽鏡腿滑動（官方映射的方向鍵）
-window.addEventListener('keydown', function(e) {
-    if (player && typeof player.getPlayerState === 'function') {
-        var currentTime = player.getCurrentTime();
-        
-        if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            player.seekTo(currentTime + 10, true);
-            console.log("鏡腿向後滑動：快轉 10 秒");
-        }
-        else if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            player.seekTo(currentTime - 10, true);
-            console.log("鏡腿向前滑動：倒轉 10 秒");
-        }
-    }
-}, true); // 使用 true (捕獲模式)，強行在 YouTube 搶走訊號前攔截！
+                    // 鏡腿水平滑動 (看你是用哪個方向前進，通常是 Left/Right)
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        player.seekTo(currentTime + 10, true); // 快轉 10 秒
+                        break;
+                        
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        player.seekTo(currentTime - 10, true); // 倒轉 10 秒
+                        break;
 
-// B. 監聽鏡腿敲擊（利用全域 click 穿透）
-window.addEventListener('click', function(e) {
-    e.preventDefault();
-    
-    if (player && typeof player.getPlayerState === 'function') {
-        var state = player.getPlayerState();
-        if (state === YT.PlayerState.PLAYING) {
-            player.pauseVideo();
-            database.ref('currentVideo/status').set('pause');
-            console.log("鏡腿敲擊：暫停影片");
-        } else {
-            player.playVideo();
-            database.ref('currentVideo/status').set('play');
-            console.log("鏡腿敲擊：繼續播放");
-        }
-    }
-});
+                    // 鏡腿垂直滑動 (Up/Down) -> 如果你想保留做其他功能，或同樣映射成快轉也可以！
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        player.seekTo(currentTime + 30, true); // 向上滑大快轉 30 秒
+                        break;
 
-
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        player.seekTo(currentTime - 30, true); // 向下滑大倒轉 30 秒
+                        break;
+                }
+            }, true); // 這個 true 是精髓，能在訊號傳進 YouTube 前強行攔截下來！
         }
     </script>
 </body>
