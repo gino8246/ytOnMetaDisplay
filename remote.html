@@ -77,19 +77,20 @@
         const database = firebase.database();
 
         // 核心網址解析器：管你貼什麼，通通現形！
-        function extractVideoId(input) {
-            var regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-            var match = input.match(regExp);
-            
-            if (match && match[2].length === 11) {
-                return match[2]; // 成功拆出 11 碼 ID
-            } else if (input.trim().length === 11) {
-                return input.trim(); // 使用者直接貼 11 碼 ID
-            } else {
-                alert("噢不！這似乎不是正確的 YouTube 連結或 ID，請再檢查一下！");
-                return null;
-            }
-        }
+function extractVideoId(input) {
+    // 新增支援 /live/ 格式的正規表達式
+    var regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|live\/)([^#\&\?]*).*/;
+    var match = input.match(regExp);
+    
+    if (match && match[2].length === 11) {
+        return match[2]; // 成功拆出 11 碼 ID (直播或一般影片皆通)
+    } else if (input.trim().length === 11) {
+        return input.trim(); // 使用者直接輸入 11 碼 ID
+    } else {
+        alert("噢不！這似乎不是正確的 YouTube 連結（支援一般、短網址與Live直播），請再檢查一下！");
+        return null;
+    }
+}
 
         // 送出點播
         function sendVideo() {
