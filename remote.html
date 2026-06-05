@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Meta Glass 遙控器</title>
+    <style>
+        body { font-family: sans-serif; padding: 50px; text-align: center; background: #f0f0f0; }
+        button { padding: 20px 40px; font-size: 20px; margin: 10px; cursor: pointer; border-radius: 10px; border: none; background: #007bff; color: white; }
+        input { padding: 15px; font-size: 18px; width: 60%; max-width: 400px; margin-bottom: 20px; }
+    </style>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+<body>
+
+    <h1>Meta 眼鏡 YouTube 遙控器</h1>
+    
+    <input type="text" id="vid-input" placeholder="請輸入 YouTube 影片 ID (例如: dQw4w9WgXcQ)"><br>
+    <button onclick="sendVideo()">點播影片</button>
+    <hr>
+    <button onclick="sendCommand('play')" style="background:#28a745;">播放</button>
+    <button onclick="sendCommand('pause')" style="background:#dc3545;">暫停</button>
+
+    <script>
+        // 初始化相同的 Firebase
+        const firebaseConfig = { databaseURL: "https://ytonmetadisplay-default-rtdb.firebaseio.com/" };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        function sendVideo() {
+            const vid = document.getElementById('vid-input').value;
+            if(vid) {
+                db.ref('currentVideo').set({ id: vid, command: 'play' });
+            }
+        }
+
+        function sendCommand(cmd) {
+            db.ref('currentVideo').update({ command: cmd });
+        }
+    </script>
+</body>
+</html>
