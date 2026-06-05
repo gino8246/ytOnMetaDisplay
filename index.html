@@ -2,58 +2,61 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Meta Glass YT HUD</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Glasses YouTube HUD</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <style>
+        /* 讓畫面完全變黑（在眼鏡中看起來就是透明），不遮擋現實視線 */
         body {
             margin: 0;
-            background-color: #000000; /* 純黑在眼鏡內等於透明 */
-            color: #ffffff;
+            background-color: #000000;
             overflow: hidden;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            width: 100vw;
         }
-        .video-box {
+        /* YouTube 播放器容器 */
+        #player {
             width: 100vw;
-            height: 56.25vw; /* 16:9 比例完美置中 */
-            background: #000;
+            height: 56.25vw; /* 保持 16:9 比例比例 */
+            max-height: 100vh;
+            max-width: 177.78vh;
         }
-        iframe { width: 100%; height: 100%; border: none; }
     </style>
-    <script src="https://www.youtube.com/iframe_api"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
 <body>
 
-    <div class="video-box">
-        <div id="player"></div>
-    </div>
+    <div id="player"></div>
 
     <script>
-        // 1. 初始化 Firebase (請替換成你自己的 Firebase 專案設定)
-		const firebaseConfig = {
-			databaseURL: "https://ytonmetadisplay-default-rtdb.firebaseio.com/"
-		};
+        // 1. 初始化你的 Firebase (維持你原來的設定)
+        const firebaseConfig = {
+            databaseURL: "https://ytonmetadisplay-default-rtdb.firebaseio.com"
+        };
         firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        const database = firebase.database();
 
-        let player;
+        // 2. 載入 YouTube IFrame Player API
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
-        // 2. 初始化 YouTube 播放器（隱藏所有官方控制列）
+        var player;
         function onYouTubeIframeAPIReady() {
+            // 預設先載入一個測試影片，並使用 youtube-nocookie.com 阻擋廣告
             player = new YT.Player('player', {
                 height: '100%',
                 width: '100%',
-                videoId: 'dQw4w9WgXcQ', // 預設初始影片
+                videoId: 'dQw4w9WgXcQ', 
+                host: 'https://www.youtube-nocookie.com', // 強制啟動無廣告隱私模式
                 playerVars: {
-                    'controls': 0,      // ❌ 隱藏控制列
-                    'rel': 0,           // ❌ 播放完不推薦其他影片
-                    'playsinline': 1,   // 🟢 網頁內播放
-                    'autoplay': 1       // 🟢 自動播放
+                    'playsinline': 1,
+                    'controls': 1, // 顯示進度條，方便看狀態
+                    'autoplay': 1,
+                    'rel': 0
                 },
                 events: {
                     'onReady': onPlayerReady
@@ -61,33 +64,50 @@
             });
         }
 
+        // 3. 當播放器準備就緒，開始監聽 Firebase 與 眼鏡觸控
         function onPlayerReady(event) {
-            // 3. 監聽 Firebase 資料庫變化
-            db.ref('currentVideo').on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    // 當資料庫裡的影片 ID 改變時，眼鏡立刻切換影片
-                    if (data.id) {
+            // 監聽 Firebase 訊號
+            database.ref('currentVideo').on('value', function(snapshot) {
+                var data = snapshot.val();
+                if (data && data.id) {
+                    var currentId = player.getVideoData()['video_id'];
+                    // 如果 ID 不同，代表換歌了
+                    if (currentId !== data.id) {
                         player.loadVideoById(data.id);
                     }
-                    // 當收到暫停或播放指令時
-                    if (data.command === 'pause') player.pauseVideo();
-                    if (data.command === 'play') player.playVideo();
+                    
+                    // 控制播放或暫停
+                    if (data.status === 'play') {
+                        player.playVideo();
+                    } else if (data.status === 'pause') {
+                        player.pauseVideo();
+                    }
                 }
             });
 
-            // 4. 連動 Meta 眼鏡硬體觸控板 (點擊眼鏡畫面的空白處切換暫停)
-            document.addEventListener('metaWearableReady', () => {
-                window.metaWearable.on('tap', () => {
-                    const state = player.getPlayerState();
+            // 4. 新增功能：監聽眼鏡鏡腿觸控（鍵盤事件）
+            window.addEventListener('keydown', function(e) {
+                // 智慧眼鏡敲擊通常會觸發 Space(空白鍵) 或 MediaPlayPause(多媒體鍵)
+                if (e.code === 'Space' || e.key === 'MediaPlayPause') {
+                    e.preventDefault();
+                    var state = player.getPlayerState();
                     if (state === YT.PlayerState.PLAYING) {
                         player.pauseVideo();
-                        db.ref('currentVideo').update({ command: 'pause' });
+                        // 同步更新回 Firebase，讓手機端同步更新狀態
+                        database.ref('currentVideo/status').set('pause');
                     } else {
                         player.playVideo();
-                        db.ref('currentVideo').update({ command: 'play' });
+                        database.ref('currentVideo/status').set('play');
                     }
-                });
+                }
+                
+                // 額外驚喜：如果眼鏡支援滑動鏡腿切換（通常對應左右方向鍵），可以快轉或倒退 10 秒
+                if (e.key === 'ArrowRight') {
+                    player.seekTo(player.getCurrentTime() + 10, true);
+                }
+                if (e.key === 'ArrowLeft') {
+                    player.seekTo(player.getCurrentTime() - 10, true);
+                }
             });
         }
     </script>

@@ -2,40 +2,114 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>Meta Glass 遙控器</title>
-    <style>
-        body { font-family: sans-serif; padding: 50px; text-align: center; background: #f0f0f0; }
-        button { padding: 20px 40px; font-size: 20px; margin: 10px; cursor: pointer; border-radius: 10px; border: none; background: #007bff; color: white; }
-        input { padding: 15px; font-size: 18px; width: 60%; max-width: 400px; margin-bottom: 20px; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube HUD 遙控器</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            background: #1e1e1e;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        input {
+            width: 100%;
+            padding: 14px;
+            background: #2d2d2d;
+            border: 1px solid #444;
+            border-radius: 8px;
+            color: white;
+            font-size: 16px;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 12px;
+            transition: opacity 0.2s;
+        }
+        .btn-play { background-color: #ff0000; color: white; }
+        .btn-ctrl { background-color: #333333; color: white; }
+        button:active { opacity: 0.8; }
+    </style>
 </head>
 <body>
 
-    <h1>Meta 眼鏡 YouTube 遙控器</h1>
-    
-    <input type="text" id="vid-input" placeholder="請輸入 YouTube 影片 ID (例如: dQw4w9WgXcQ)"><br>
-    <button onclick="sendVideo()">點播影片</button>
-    <hr>
-    <button onclick="sendCommand('play')" style="background:#28a745;">播放</button>
-    <button onclick="sendCommand('pause')" style="background:#dc3545;">暫停</button>
+    <div class="container">
+        <h2>👓 YouTube HUD 遙控面板</h2>
+        
+        <input type="text" id="urlInput" placeholder="請貼上 YouTube 影片網址或 ID">
+        
+        <button class="btn-play" onclick="sendVideo()">🚀 點播影片 / 切換</button>
+        <hr style="border: 0; border-top: 1px solid #333; margin: 20px 0;">
+        <button class="btn-ctrl" onclick="controlStatus('play')">▶️ 繼續播放</button>
+        <button class="btn-ctrl" onclick="controlStatus('pause')">⏸️ 暫停影片</button>
+    </div>
 
     <script>
-        // 初始化相同的 Firebase
-        const firebaseConfig = { databaseURL: "https://ytonmetadisplay-default-rtdb.firebaseio.com/" };
+        // 初始化 Firebase (維持你原來的設定)
+        const firebaseConfig = {
+            databaseURL: "https://ytonmetadisplay-default-rtdb.firebaseio.com"
+        };
         firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        const database = firebase.database();
 
-        function sendVideo() {
-            const vid = document.getElementById('vid-input').value;
-            if(vid) {
-                db.ref('currentVideo').set({ id: vid, command: 'play' });
+        // 核心網址解析器：管你貼什麼，通通現形！
+        function extractVideoId(input) {
+            var regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            var match = input.match(regExp);
+            
+            if (match && match[2].length === 11) {
+                return match[2]; // 成功拆出 11 碼 ID
+            } else if (input.trim().length === 11) {
+                return input.trim(); // 使用者直接貼 11 碼 ID
+            } else {
+                alert("噢不！這似乎不是正確的 YouTube 連結或 ID，請再檢查一下！");
+                return null;
             }
         }
 
-        function sendCommand(cmd) {
-            db.ref('currentVideo').update({ command: cmd });
+        // 送出點播
+        function sendVideo() {
+            var rawInput = document.getElementById('urlInput').value;
+            var finalId = extractVideoId(rawInput);
+            
+            if (finalId) {
+                database.ref('currentVideo').set({
+                    id: finalId,
+                    status: 'play',
+                    timestamp: Date.now()
+                }).then(() => {
+                    document.getElementById('urlInput').value = ''; // 成功後清空輸入框
+                });
+            }
+        }
+
+        // 控制暫停或播放
+        function controlStatus(statusAction) {
+            database.ref('currentVideo/status').set(statusAction);
         }
     </script>
 </body>
