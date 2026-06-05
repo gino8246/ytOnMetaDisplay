@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Glasses Event Logger</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #000000; /* 保持黑色，在眼鏡裡是透明的 */
+            color: #00FF00; /* 用亮綠色，在眼鏡裡最清晰 */
+            font-family: monospace;
+            padding: 20px;
+            box-sizing: border-box;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .box {
+            border: 2px solid #00FF00;
+            padding: 15px;
+            margin: 10px;
+            width: 90%;
+            border-radius: 8px;
+        }
+        h1 { font-size: 24px; color: #FFFF00; margin-bottom: 5px; }
+        p { font-size: 18px; margin: 5px 0; word-break: break-all; }
+        .highlight { color: #FF00FF; font-weight: bold; font-size: 22px; }
+    </style>
+</head>
+<body>
+
+    <h1>👓 眼鏡訊號觀測站</h1>
+    <p>請操作你的鏡腿（單擊、向前滑、向後滑）</p>
+
+    <div class="box">
+        <h3>【最新鍵盤 / 滑動事件 (keydown)】</h3>
+        <p>event.key: <span id="key-name" class="highlight">等待輸入...</span></p>
+        <p>event.code: <span id="key-code" class="highlight">等待輸入...</span></p>
+    </div>
+
+    <div class="box">
+        <h3>【最新滑鼠點擊事件 (click)】</h3>
+        <p>Event Type: <span id="click-type" class="highlight">等待點擊...</span></p>
+        <p>X / Y 座標: <span id="click-pos" class="highlight">X: 0, Y: 0</span></p>
+    </div>
+
+    <script>
+        // 1. 捕獲所有鍵盤與滑動訊號 (使用捕獲模式 true，確保不被任何底層元件劫持)
+        window.addEventListener('keydown', function(e) {
+            document.getElementById('key-name').innerText = e.key;
+            document.getElementById('key-code').innerText = e.code;
+            console.log("Keydown:", e.key, e.code);
+        }, true);
+
+        // 2. 捕獲所有滑鼠與敲擊訊號
+        window.addEventListener('click', function(e) {
+            document.getElementById('click-type').innerText = e.type;
+            document.getElementById('click-pos').innerText = "X: " + Math.round(e.clientX) + ", Y: " + Math.round(e.clientY);
+            console.log("Click:", e.clientX, e.clientY);
+        }, true);
+
+        // 3. 監聽標準網頁滾動事件（如果滑動被系統硬性當成 scroll 處理）
+        window.addEventListener('scroll', function(e) {
+            document.getElementById('key-name').innerText = "偵測到網頁滾動 (Scroll)";
+            document.getElementById('key-code').innerText = "window.scrollY: " + window.scrollY;
+        }, true);
+    </script>
+</body>
+</html>
