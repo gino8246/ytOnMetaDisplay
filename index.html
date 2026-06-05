@@ -86,42 +86,40 @@
             });
 
 
-// 4. 進階版：利用網頁座標，將眼鏡鏡腿劃分為「前、中、後」三個控制區
-window.addEventListener('click', function(e) {
-    // 阻止網頁點擊的預設行為（避免干擾 YouTube 播放器本身）
-    e.preventDefault();
-    
-    // 取得目前眼鏡螢幕的總寬度，以及使用者點擊的 X 軸絕對座標
-    var screenWidth = window.innerWidth;
-    var clickX = e.clientX;
-    
-    // 確保 YouTube 播放器已經載入完畢
+// 5. 終極完全體：方向鍵監聽（滑動） + 全域點擊監聽（敲擊）
+
+// A. 監聽鏡腿滑動（官方映射的方向鍵）
+window.addEventListener('keydown', function(e) {
     if (player && typeof player.getPlayerState === 'function') {
         var currentTime = player.getCurrentTime();
         
-        // 【邏輯拆解】：將眼鏡視野寬度切成三等份
-        // 1. 點擊靠近鏡片的前端 (0% ~ 35% 區域) -> 倒轉 10 秒
-        if (clickX < screenWidth * 0.35) {
-            player.seekTo(currentTime - 10, true);
-            console.log("偵測到點擊鏡腿前端：倒轉 10 秒");
-        } 
-        // 2. 點擊靠近耳朵的後端 (65% ~ 100% 區域) -> 快轉 10 秒
-        else if (clickX > screenWidth * 0.65) {
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
             player.seekTo(currentTime + 10, true);
-            console.log("偵測到點擊鏡腿後端：快轉 10 秒");
-        } 
-        // 3. 點擊正中間 (35% ~ 65% 區域) -> 暫停 / 播放
-        else {
-            var state = player.getPlayerState();
-            if (state === YT.PlayerState.PLAYING) {
-                player.pauseVideo();
-                database.ref('currentVideo/status').set('pause');
-                console.log("偵測到點擊鏡腿中段：暫停");
-            } else {
-                player.playVideo();
-                database.ref('currentVideo/status').set('play');
-                console.log("偵測到點擊鏡腿中段：播放");
-            }
+            console.log("鏡腿向後滑動：快轉 10 秒");
+        }
+        else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            player.seekTo(currentTime - 10, true);
+            console.log("鏡腿向前滑動：倒轉 10 秒");
+        }
+    }
+}, true); // 使用 true (捕獲模式)，強行在 YouTube 搶走訊號前攔截！
+
+// B. 監聽鏡腿敲擊（利用全域 click 穿透）
+window.addEventListener('click', function(e) {
+    e.preventDefault();
+    
+    if (player && typeof player.getPlayerState === 'function') {
+        var state = player.getPlayerState();
+        if (state === YT.PlayerState.PLAYING) {
+            player.pauseVideo();
+            database.ref('currentVideo/status').set('pause');
+            console.log("鏡腿敲擊：暫停影片");
+        } else {
+            player.playVideo();
+            database.ref('currentVideo/status').set('play');
+            console.log("鏡腿敲擊：繼續播放");
         }
     }
 });
