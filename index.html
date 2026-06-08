@@ -95,18 +95,10 @@
             }, 1000);
 
             // 監聽來自手機遙控端的 Firebase 訊號
-            database.ref('currentVideo').on('value', function(snapshot) {
-                var data = snapshot.val();
-                if (data && data.id) {
-                    var currentId = player.getVideoData()['video_id'];
-                    if (currentId !== data.id) {
-                        player.loadVideoById(data.id);
-                    }
-                    if (data.status === 'play') {
-                        player.playVideo();
-                    } else if (data.status === 'pause') {
-                        player.pauseVideo();
-                    }
+            database.ref('currentVideo/id').on('value', function(snapshot) {
+                var id = snapshot.val();
+                if (id && id !== player.getVideoData()['video_id']) {
+                    player.loadVideoById(id);
                 }
             });
 
@@ -123,10 +115,8 @@
                         var state = player.getPlayerState();
                         if (state === YT.PlayerState.PLAYING) {
                             player.pauseVideo();
-                            database.ref('currentVideo/status').set('pause');
                         } else {
                             player.playVideo();
-                            database.ref('currentVideo/status').set('play');
                         }
                         break;
 
