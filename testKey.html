@@ -48,6 +48,18 @@
         <p>X / Y 座標: <span id="click-pos" class="highlight">X: 0, Y: 0</span></p>
     </div>
 
+    <div class="box">
+        <h3>【最新滾動事件 (scroll)】</h3>
+        <p>window.scrollY: <span id="scroll-y" class="highlight">0</span></p>
+    </div>
+
+    <div class="box">
+        <h3>【頁面可見性 / 焦點事件】</h3>
+        <p>目前狀態: <span id="vis-state" class="highlight">visible</span></p>
+        <p>事件歷史(最新在上):</p>
+        <p id="vis-log" class="highlight" style="white-space:pre-line; font-size:16px;">（尚無事件）</p>
+    </div>
+
     <script>
         // 1. 捕獲所有鍵盤與滑動訊號 (使用捕獲模式 true，確保不被任何底層元件劫持)
         window.addEventListener('keydown', function(e) {
@@ -65,9 +77,28 @@
 
         // 3. 監聽標準網頁滾動事件（如果滑動被系統硬性當成 scroll 處理）
         window.addEventListener('scroll', function(e) {
-            document.getElementById('key-name').innerText = "偵測到網頁滾動 (Scroll)";
-            document.getElementById('key-code').innerText = "window.scrollY: " + window.scrollY;
+            document.getElementById('scroll-y').innerText = window.scrollY;
         }, true);
+
+        // 4. 監聽頁面可見性 / 焦點事件（診斷「頁面被判定隱藏 → YT 自動暫停」的關鍵）
+        //    這類事件不是 keydown/click/scroll，所以上面三個框抓不到，需獨立記錄。
+        var visLog = [];
+        var visCount = 0;
+        function logVis(name, extra) {
+            visCount++;
+            visLog.unshift('#' + visCount + ' ' + name + (extra ? ' -> ' + extra : ''));
+            visLog = visLog.slice(0, 8);
+            document.getElementById('vis-state').innerText = document.visibilityState;
+            document.getElementById('vis-log').innerText = visLog.join('\n');
+            console.log("VisEvent:", name, extra || '');
+        }
+        document.addEventListener('visibilitychange', function() {
+            logVis('visibilitychange', document.visibilityState);
+        });
+        window.addEventListener('blur', function() { logVis('blur'); });
+        window.addEventListener('focus', function() { logVis('focus'); });
+        window.addEventListener('pagehide', function() { logVis('pagehide'); });
+        window.addEventListener('pageshow', function() { logVis('pageshow'); });
     </script>
 </body>
 </html>
