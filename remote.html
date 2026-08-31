@@ -6,6 +6,7 @@
     <title>YouTube HUD 遙控器</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.youtube.com/iframe_api" async></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -51,7 +52,19 @@
             transition: opacity 0.2s;
         }
         .btn-play { background-color: #ff0000; color: white; }
+        .btn-preview { background-color: #333333; color: white; }
+        .btn-seek { background-color: #1e88e5; color: white; }
         button:active { opacity: 0.8; }
+        #preview-wrap {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 */
+            margin: 4px 0 16px;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        #preview { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
     </style>
 </head>
 <body>
@@ -62,6 +75,12 @@
         <input type="text" id="urlInput" placeholder="請貼上 YouTube 影片網址或 ID">
         
         <button class="btn-play" onclick="sendVideo()">🚀 點播影片 / 切換</button>
+        <button class="btn-preview" onclick="previewVideo()">👁 在手機預覽此網址</button>
+
+        <div id="preview-wrap"><div id="preview"></div></div>
+
+        <button class="btn-seek" onclick="sendCurrentPreviewTime()">⏩ 送到眼鏡（從目前預覽時間播放）</button>
+        <p id="status-msg" style="min-height:1.5em; color:#4caf50; font-size:14px; margin-top:8px;"></p>
     </div>
 
     <script>
@@ -72,36 +91,94 @@
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
 
-        // 核心網址解析器：管你貼什麼，通通現形！
-function extractVideoId(input) {
-    // 新增支援 /live/ 格式的正規表達式
-    var regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|live\/)([^#\&\?]*).*/;
-    var match = input.match(regExp);
-    
-    if (match && match[2].length === 11) {
-        return match[2]; // 成功拆出 11 碼 ID (直播或一般影片皆通)
-    } else if (input.trim().length === 11) {
-        return input.trim(); // 使用者直接輸入 11 碼 ID
-    } else {
-        alert("噢不！這似乎不是正確的 YouTube 連結（支援一般、短網址與Live直播），請再檢查一下！");
-        return null;
-    }
-}
+        // 支援格式：完整網址（youtu\.be / watch?v= / embed / live）或純 11 碼 ID
+        const YT_REGEX = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|live\/)([^#&?]*).*/;
+        const VALID_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
-        // 送出點播
+        function extractVideoId(input) {
+            const match = input.match(YT_REGEX);
+            const id = (match && match[2].length === 11) ? match[2] : input.trim();
+            if (VALID_VIDEO_ID.test(id)) return id;
+            showStatus("無法辨識的 YouTube 網址或 ID，請再檢查一下！", true);
+            return null;
+        }
+
+        function showStatus(message, isError = false) {
+            const el = document.getElementById('status-msg');
+            el.textContent = message;
+            el.style.color = isError ? '#f44336' : '#4caf50';
+        }
+
         function sendVideo() {
-            var rawInput = document.getElementById('urlInput').value;
-            var finalId = extractVideoId(rawInput);
-            
+            const rawInput = document.getElementById('urlInput').value;
+            const finalId = extractVideoId(rawInput);
             if (finalId) {
                 database.ref('currentVideo').set({
                     id: finalId,
-                    status: 'play',
                     timestamp: Date.now()
                 }).then(() => {
-                    document.getElementById('urlInput').value = ''; // 成功後清空輸入框
+                    document.getElementById('urlInput').value = '';
+                    showStatus('已送出，眼鏡端即將播放！');
                 });
             }
+        }
+
+        // ---- 手機端預覽 + 選時間送出 ----
+        let previewPlayer;
+        let previewReady = false;
+
+        // YouTube IFrame API 就緒時自動呼叫
+        function onYouTubeIframeAPIReady() {
+            previewPlayer = new YT.Player('preview', {
+                width: '100%',
+                height: '100%',
+                playerVars: { playsinline: 1, rel: 0 },
+                events: {
+                    'onReady': function() {
+                        previewReady = true;
+                        // 預設載入眼鏡目前正在播的影片，方便直接重新定位
+                        database.ref('currentVideo/id').once('value').then(function(snap) {
+                            const id = snap.val();
+                            if (id && VALID_VIDEO_ID.test(id)) previewPlayer.cueVideoById(id);
+                        });
+                    }
+                }
+            });
+        }
+
+        // 把輸入框的網址載入手機預覽（不影響眼鏡）
+        function previewVideo() {
+            if (!previewReady) { showStatus('預覽播放器尚未就緒，請稍候', true); return; }
+            const id = extractVideoId(document.getElementById('urlInput').value);
+            if (id) previewPlayer.loadVideoById(id);
+        }
+
+        // 把「目前預覽的影片 + 目前預覽時間」送到眼鏡
+        function sendCurrentPreviewTime() {
+            if (!previewReady || typeof previewPlayer.getCurrentTime !== 'function') {
+                showStatus('預覽播放器尚未就緒', true);
+                return;
+            }
+            const data = previewPlayer.getVideoData();
+            const previewId = data && data.video_id;
+            if (!previewId) { showStatus('預覽尚未載入影片', true); return; }
+            const time = Math.floor(previewPlayer.getCurrentTime());
+
+            database.ref('currentVideo/id').once('value').then(function(snap) {
+                const currentId = snap.val();
+                if (previewId === currentId) {
+                    // 同一支影片 → 送 seek 指令，眼鏡原地跳轉
+                    database.ref('currentVideo/seek').set({ to: time, at: Date.now() })
+                        .then(() => showStatus('已送出跳轉至 ' + time + ' 秒'));
+                } else {
+                    // 新影片 → 覆寫 currentVideo，並以 position 當作起始秒數
+                    database.ref('currentVideo').set({
+                        id: previewId,
+                        timestamp: Date.now(),
+                        position: time
+                    }).then(() => showStatus('已切換影片，從 ' + time + ' 秒開始'));
+                }
+            });
         }
 
 </script>

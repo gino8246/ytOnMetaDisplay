@@ -6,6 +6,7 @@
     <title>Meta Glasses YouTube HUD</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.youtube.com/iframe_api" async></script>
     <style>
         body {
             margin: 0;
@@ -59,18 +60,16 @@
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
 
-        // 2. 載入 YouTube IFrame Player API
-        var tag = document.createElement('script');
-        tag.src = "https://www.youtube.com/iframe_api";
-        var firstScriptTag = document.getElementsByTagName('script')[0];
-        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        const DEFAULT_VIDEO_ID = 'dQw4w9WgXcQ'; // 開機預設影片，Firebase 尚未設定時使用
+        const VALID_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
-        var player;
+        let player;
+        let expectedVideoId = null; // 目前「應該在播」的影片，避免轉場空檔回報舊片進度
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('player', {
                 height: '100%',
                 width: '100%',
-                videoId: 'dQw4w9WgXcQ', 
+                videoId: DEFAULT_VIDEO_ID,
                 host: 'https://www.youtube-nocookie.com', // 阻擋廣告
                 playerVars: {
                     'playsinline': 1,
@@ -86,53 +85,112 @@
 
         // 3. 當播放器準備就緒
         function onPlayerReady(event) {
-            // 強制將網頁焦點鎖死在 body 上，不給 YouTube 任何機會
-            document.getElementById('main-body').focus();
-            
-            // 每秒鐘檢查一次，確保焦點沒被偷走
-            setInterval(function() {
-                document.getElementById('main-body').focus();
-            }, 1000);
+            maintainFocus();
+            listenForVideoChanges();
+            listenForSeek();
+            startPositionReporting();
+            bindKeyboardControls();
+        }
 
-            // 監聽來自手機遙控端的 Firebase 訊號
+        function maintainFocus() {
+            const mainBody = document.getElementById('main-body');
+            mainBody.focus();
+            // Meta 眼鏡 HUD 環境中焦點容易被系統奪走，失焦時立即重新取得
+            mainBody.addEventListener('blur', () => mainBody.focus());
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) mainBody.focus();
+            });
+        }
+
+        function listenForVideoChanges() {
+            let loadTimer = null;
             database.ref('currentVideo/id').on('value', function(snapshot) {
-                var id = snapshot.val();
-                if (id && id !== player.getVideoData()['video_id']) {
-                    player.loadVideoById(id);
+                const id = snapshot.val();
+                if (!id || !VALID_VIDEO_ID.test(id)) return;
+                // 立刻標記期望影片：轉場空檔的進度回報會被擋掉，不會覆寫 remote 指定的新片起點
+                expectedVideoId = id;
+                clearTimeout(loadTimer);
+                // debounce 300ms，防止連續點播觸發重複載入
+                loadTimer = setTimeout(function() {
+                    if (id !== player.getVideoData()['video_id']) {
+                        // 讀取起始秒數：重開 app 續播上次進度，或 remote 送新片時指定的起點
+                        database.ref('currentVideo/position').once('value').then(function(posSnap) {
+                            const start = Number(posSnap.val()) || 0;
+                            player.loadVideoById({ videoId: id, startSeconds: start });
+                        });
+                    }
+                }, 300);
+            });
+        }
+
+        // 監聽 remote 送來的「立即跳轉」指令；只有 remote 會寫 seek，index 只讀不寫，故不會自我觸發
+        function listenForSeek() {
+            let isFirst = true;
+            database.ref('currentVideo/seek').on('value', function(snapshot) {
+                // 跳過掛上監聽時回吐的初始快照（可能是上一輪殘留的舊指令），避免開機誤跳
+                if (isFirst) { isFirst = false; return; }
+                const seek = snapshot.val();
+                if (!seek || typeof seek.to !== 'number') return;
+                if (!player || typeof player.seekTo !== 'function') return;
+                player.seekTo(seek.to, true);
+                player.playVideo();
+            });
+        }
+
+        // 播放中定期回報進度到 Firebase，供「重開續播」與 remote 顯示使用
+        function startPositionReporting() {
+            setInterval(function() {
+                if (player && typeof player.getPlayerState === 'function' &&
+                    player.getPlayerState() === YT.PlayerState.PLAYING && isPlayingExpected()) {
+                    database.ref('currentVideo/position').set(Math.floor(player.getCurrentTime()));
+                }
+            }, 5000);
+            // 頁面轉為隱藏（退出 app）那一刻補存一次，盡量抓到最後進度
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden && isPlayingExpected()) {
+                    database.ref('currentVideo/position').set(Math.floor(player.getCurrentTime()));
                 }
             });
+        }
 
-            // 4. 精準硬體事件監聽 (搭配 true 捕獲模式)
+        // 目前實際播放的影片是否就是期望影片（擋掉轉場空檔與預設影片的誤回報）
+        function isPlayingExpected() {
+            if (!player || typeof player.getVideoData !== 'function') return false;
+            const data = player.getVideoData();
+            return !!(data && data.video_id && data.video_id === expectedVideoId);
+        }
+
+        function bindKeyboardControls() {
+
+            const HANDLED_KEYS = new Set(['Enter', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'ArrowDown']);
+            // 捕獲模式 (true)：確保鏡腿硬體事件不被底層元件劫持
             window.addEventListener('keydown', function(e) {
+                if (!HANDLED_KEYS.has(e.key)) return;
                 if (!player || typeof player.getPlayerState !== 'function') return;
-                
-                var currentTime = player.getCurrentTime();
+
+                e.preventDefault();
+                const currentTime = player.getCurrentTime();
 
                 switch (e.key) {
                     // 敲擊鏡腿 (Enter) -> 切換暫停或播放
                     case 'Enter':
-                        e.preventDefault();
-                        var state = player.getPlayerState();
-                        if (state === YT.PlayerState.PLAYING) {
+                        if (player.getPlayerState() === YT.PlayerState.PLAYING) {
                             player.pauseVideo();
                         } else {
                             player.playVideo();
                         }
                         break;
 
-                    // 鏡腿水平/垂直滑動
+                    // 鏡腿向前滑 -> 快轉 10 秒
                     case 'ArrowRight':
                     case 'ArrowUp':
-                        e.preventDefault();
-                        player.seekTo(currentTime + 10, true); // 快轉 10 秒
-                        console.log("快轉 10 秒");
+                        player.seekTo(currentTime + 10, true);
                         break;
-                        
+
+                    // 鏡腿向後滑 -> 倒轉 10 秒
                     case 'ArrowLeft':
                     case 'ArrowDown':
-                        e.preventDefault();
-                        player.seekTo(currentTime - 10, true); // 倒轉 10 秒
-                        console.log("倒轉 10 秒");
+                        player.seekTo(currentTime - 10, true);
                         break;
                 }
             }, true);
