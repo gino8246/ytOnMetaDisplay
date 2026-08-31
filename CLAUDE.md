@@ -10,20 +10,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 remote.html  ──寫入──▶  Firebase RTDB  ──讀取──▶  index.html (眼鏡端)
-                         currentVideo{             (YouTube IFrame API)
-                           id, command
-                         }
+   ▲                     currentVideo{             (YouTube IFrame API)
+   └────讀取 position─────  id, timestamp,
+                            position, seek       ──── index 回報 position ──┐
+                          }                                                 │
+                            ▲───────────────────────────────────────────────┘
 ```
 
-- **index.html** — 在 Meta 眼鏡瀏覽器內執行，黑底（眼鏡內等於透明），監聽 Firebase `currentVideo` 節點變化，透過 YouTube IFrame API 切換/控制影片。
-- **remote.html** — 手機或電腦的遙控介面，寫入影片 ID 與 play/pause 指令到 Firebase。
-- **testKey.html** — 偵測 Meta 眼鏡鏡腿手勢對應的瀏覽器事件（keydown / click / scroll），用於開發階段的輸入訊號測試。
+- **index.html** — 在 Meta 眼鏡瀏覽器內執行，黑底（眼鏡內等於透明）。監聽 `currentVideo/id` 切換影片、監聽 `currentVideo/seek` 即時跳轉；播放中每 5 秒（及頁面隱藏時）回報 `currentVideo/position`，載入影片時以 `startSeconds` 續播。
+- **remote.html** — 手機或電腦的遙控介面。點播影片（寫 `id`）、內嵌 YouTube 預覽播放器可在手機端先看/拖曳，再送出「跳轉時間」（同片寫 `seek`，新片寫 `set({id, timestamp, position})`）。
+- **testKey.html** — 偵測 Meta 眼鏡鏡腿手勢對應的瀏覽器事件（keydown / click / scroll，以及 visibilitychange / blur / focus / pagehide 可見性事件），用於開發階段的輸入訊號與失焦暫停診斷。
 
 ## Firebase 設定
 
 Firebase 使用 CDN v8 SDK（compat 模式），只用到 Realtime Database，無需 Auth。
 Firebase 專案：`ytonmetadisplay-default-rtdb.firebaseio.com`
-資料結構：`/currentVideo { id: string, command: "play"|"pause" }`
+
+資料結構 `/currentVideo`：
+
+| 欄位 | 型別 | 寫入者 | 說明 |
+|------|------|--------|------|
+| `id` | string | remote | 11 碼 YouTube 影片 ID |
+| `timestamp` | number | remote | 點播時間（`Date.now()`） |
+| `position` | number | **index（眼鏡）** | 目前播放秒數，播放中每 5 秒 / 頁面隱藏時回報；用於重開續播，remote 送新片時亦用作起始秒數 |
+| `seek` | `{ to: number, at: number }` | remote | 即時跳轉指令；index 監聽並 `seekTo(to)`。`at` 為時間戳，確保跳到同一秒也會觸發；index 只讀不寫，且開機時跳過初始快照避免誤跳 |
+
+> 播放/暫停由眼鏡端敲鏡腿（Enter）本地控制，**不經 Firebase**（舊版的 `command` / `status` 欄位已移除）。
+
+安全規則：`currentVideo` 節點需開放讀寫（無 Auth）。測試模式規則會過期，過期後讀寫回傳 401 Permission denied，需至 Firebase Console 更新規則。
 
 ## 部署
 
